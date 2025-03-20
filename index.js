@@ -5,20 +5,13 @@ const fs = require('fs');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 const authRouter = require('./controller/auth/auth.router');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const userRouter = require('./controller/user/user.router');
 const { generateRandomId } = require('./utils/basic');
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
-
-// Ensure the uploads directory exists
-// const uploadsDir = path.join(__dirname, 'uploads');
-// if (!fs.existsSync(uploadsDir)) {
-//     fs.mkdirSync(uploadsDir);
-// }
-
 
 
 const SECRET_KEY = "your_secret_key"; // Replace with a secure key
@@ -49,7 +42,7 @@ function authenticateUser(userId, imagePath, trainerPath, callback) {
             callback(null, "Authentication successful");
         } else {
             // Authentication failed or no valid output
-            callback(new Error("Authentication failed"));
+            // callback(new Error("Authentication failed"));
         }
     });
 }
@@ -62,15 +55,17 @@ function detectFace(userId, imagePath) {
         const pythonScriptPath = path.join(__dirname, './child_processes/detect_face.py');
 
         // Construct the command
-        const command = `py ${pythonScriptPath} "${imagePath}"`;
+        console.log({imagePath})
+        const command = `py ${pythonScriptPath} "${imagePath}" "${userId}"`;
 
-        const pythonProcess = spawn(command);
+        const pythonProcess = exec(command);
 
         let output = "";
         let errorOutput = "";
 
         // Collect stdout data
         pythonProcess.stdout.on("data", (data) => {
+            // console.log("data rea", data)
             output += data.toString();
         });
 
@@ -83,15 +78,21 @@ function detectFace(userId, imagePath) {
         pythonProcess.on("close", (code) => {
             if (errorOutput) {
                 try {
-                    reject(JSON.parse(errorOutput));
+                    resolve({status: false, output});
                 } catch (err) {
-                    reject({ error: "Unknown error", details: errorOutput });
+                    
+                    resolve({status: false, error: "Unknown error", details: errorOutput });
                 }
             } else {
                 try {
-                    resolve(JSON.parse(output));
+                    if(output.includes("No")) {
+                        resolve({status: false, error: "Unknown error 1"});
+                    }
+                    else {
+                        resolve({status: true, output});
+                    }
                 } catch (err) {
-                    reject({ error: "Invalid JSON output", details: output });
+                    reject({status: false, error: "Invalid JSON output", details: output });
                 }
             }
         });
@@ -152,6 +153,7 @@ wss.on('connection', (ws) => {
                     if (files.length >= maxImages) {
                         // Send a message to the client if the limit is reached
                         // console.log('Maximum of 20 images already stored.');
+                        // uncoment this it is development only
                         sendToClient(clientId, JSON.stringify({status: true, message: 'Maximum of 20 images already stored'}))
                     } else {
                         // Save the new image if the limit is not reached
@@ -159,8 +161,28 @@ wss.on('connection', (ws) => {
                         const filePath = path.join(uploadsDir, filepath1);
 
                         fs.writeFileSync(filePath, buffer);
-                        const checkData = await detectFace(clientId, filepath1)
-                        // console.log('Image saved:', filePath);
+                        console.log(`come here`)
+                        const checkData = await detectFace(clientId, filePath)
+                        console.log({checkData});
+
+                        if(checkData.status == true) {
+                            // Authentication was successful
+                            sendToClient(clientId, JSON.stringify({status: true, message: 'imageCaptured', success: true}));
+                     
+                        }
+                        else if(checkData.status == false) {
+                            console.log(`fail`)
+                            sendToClient(clientId, JSON.stringify({status: false, message: 'imagenotCaptured', success: false}));
+                            fs.unlink(filePath, (err) => {
+                                if (err) {
+                                  console.error('Error deleting the image:', err);
+                                } else {
+                                  console.log('Image deleted successfully!');
+                                }
+                              });
+                        }
+
+                        // console.log('Image saved:', filePath);0
 
                         
 
@@ -210,7 +232,7 @@ wss.on('connection', (ws) => {
             }
         } catch (error) {
             sendToClient(clientId, JSON.stringify({status: false, message: 'Authentication failed'}));
-            // console.error('Error processing image:', error);
+            console.error('Error processing image:', error);
         }
     });
 
@@ -221,6 +243,7 @@ const port = 4000;
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
 
 app.use('/api/auth', authRouter);
 app.use('/api/password', userRouter);

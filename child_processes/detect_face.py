@@ -1,58 +1,48 @@
-import sys
-import json
 import cv2
-import dlib
-import numpy as np
+import sys
 
-# Load dlib's face detector and landmark predictor
-detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")  # Download this file
+# Function to detect face
+def detect_face(image_path):
+    # Load the pre-trained face detector model from OpenCV
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
-def detect_face_orientation(image_path):
-    try:
-        image = cv2.imread(image_path)
-        if image is None:
-            raise ValueError("Image not found or invalid format")
+    # Read the image
+    image = cv2.imread(image_path)
+    if image is None:
+        print("Image not found.")
+        return False
 
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        faces = detector(gray)
+    # Convert image to grayscale (necessary for face detection)
+    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-        if len(faces) == 0:
-            print(json.dumps({"status": "No face detected"}))
-            sys.exit(0)
+    # Detect faces in the image
+    faces = face_cascade.detectMultiScale(gray_image, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
 
-        for face in faces:
-            landmarks = predictor(gray, face)
+    # If faces are detected
+    if len(faces) > 0:
+        return True
+    else:
+        return False
 
-            # Get key points
-            nose = (landmarks.part(30).x, landmarks.part(30).y)
-            left_eye = (landmarks.part(36).x, landmarks.part(36).y)
-            right_eye = (landmarks.part(45).x, landmarks.part(45).y)
-            left_mouth = (landmarks.part(48).x, landmarks.part(48).y)
-            right_mouth = (landmarks.part(54).x, landmarks.part(54).y)
-
-            # Compute distances
-            eye_distance = abs(left_eye[0] - right_eye[0])
-            mouth_distance = abs(left_mouth[0] - right_mouth[0])
-            nose_offset = abs(nose[0] - (left_eye[0] + right_eye[0]) // 2)
-
-            # Define threshold for forward-facing detection
-            if nose_offset < eye_distance * 0.15 and mouth_distance > eye_distance * 0.8:
-                result = {"status": "Face is forward"}
-            else:
-                result = {"status": "Face is not forward"}
-
-            print(json.dumps(result))  # Send result to stdout
-            sys.exit(0)
-
-    except Exception as e:
-        print(json.dumps({"error": str(e)}), file=sys.stderr)  # Send errors to stderr
+# Main function to get input from command-line arguments
+def main():
+    # Check if an image path is provided in the arguments
+    if len(sys.argv) < 3:
+        print("Please provide the image file path as an argument.")
         sys.exit(1)
+
+    # Get the image path from command-line arguments
+    image_path = sys.argv[1]
+    user_id = sys.argv[2]
+
+    # Call the detect_face function
+    result = detect_face(image_path)
+
+    # Print the result based on detection
+    if result:
+        print("Face detected and visible from the front.")
+    else:
+        print("No front-facing face detected.")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print(json.dumps({"error": "No image path provided"}), file=sys.stderr)
-        sys.exit(1)
-
-    image_path = sys.argv[1]
-    detect_face_orientation(image_path)
+    main()

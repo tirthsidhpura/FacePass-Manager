@@ -43,8 +43,10 @@ exports.register = async (req, res) => {
         }
 
         // Insert user into database
-        await query("INSERT INTO users (name, email, password, genId) VALUES (?, ?, ?, ?)", [name, email, hashedPassword, genid]);
-        res.status(201).json({ status: true, message: "User registered successfully" });
+        const ch = await query("INSERT INTO users (name, email, password, genId) VALUES (?, ?, ?, ?)", [name, email, hashedPassword, genid]);
+        console.log({ch})
+        const token = jwt.sign({ id: ch.insertId, email: value.email, id: genid }, SECRET_KEY, { expiresIn: "1h" });
+        res.status(201).json({ status: true, message: "User registered successfully" , token});
     } catch (error) {
         return res.status(400).json({ status: false, message: error.message });
     }
@@ -131,6 +133,13 @@ exports.faceDetectFirst = async (req, res) => {
 
                     if (error) {
                         console.error(`Error executing script: ${error.message}`);
+                        fs.rm(outDirectory, { recursive: true, force: true }, (err) => {
+                            if (err) {
+                              console.error('Error deleting folder:', err);
+                            } else {
+                              console.log('Folder deleted successfully');
+                            }
+                          });
                         return res.status(500).json({ status: false, message: 'Error training model' });
                     }
                     if (stderr) {
@@ -143,6 +152,13 @@ exports.faceDetectFirst = async (req, res) => {
                     // Check if the second script completed successfully
                     if (stdout.includes("Training completed and model saved as")) {
                         // Update the database
+                        fs.rm(outDirectory, { recursive: true, force: true }, (err) => {
+                            if (err) {
+                              console.error('Error deleting folder:', err);
+                            } else {
+                              console.log('Folder deleted successfully');
+                            }
+                          });
                         await query(`UPDATE users SET isFacedetection = ? WHERE genId = ?`, [true, id]);
                         return res.status(200).json({ status: true, message: 'Data trained successfully' , faceStatus: true});
                     }
